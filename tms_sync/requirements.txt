@@ -1,0 +1,7 @@
+requests
+psycopg2-binary
+python-dotenv
+pytesseract
+Pillow
+pdf2image
+pypdf

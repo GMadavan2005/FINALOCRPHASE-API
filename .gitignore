@@ -1,0 +1,6 @@
+.env
+.venv/
+tms_sync/venv/
+__pycache__/
+*.pyc
+tms_sync/scanned_bills/
