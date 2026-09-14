@@ -65,12 +65,7 @@ def _preprocess_for_ocr(image):
     return gray.resize((gray.width * 2, gray.height * 2), Image.Resampling.LANCZOS)
 
 
-def _ocr_pdf_pages(
-    pdf_path: str,
-    dpi: int = 200,
-    preprocess: bool = False,
-    config: str = "",
-) -> str:
+def _ocr_pdf_pages(pdf_path: str, preprocess: bool = False) -> str:
     """Only reached when the PDF has no usable text layer, i.e. it's
     actually a scanned image saved as a PDF. Renders each page to an
     image and OCRs it with Tesseract the same way a plain image would be."""
@@ -78,12 +73,12 @@ def _ocr_pdf_pages(
 
     pages = convert_from_path(
         pdf_path,
-        dpi=dpi,
+        dpi=200,
         poppler_path=r"E:\poppler\poppler-26.07.0\Library\bin",
     )
     if preprocess:
         pages = [_preprocess_for_ocr(page_image) for page_image in pages]
-    return "\n".join(_ocr_image(page_image, config=config) for page_image in pages)
+    return "\n".join(_ocr_image(page_image) for page_image in pages)
 
 
 def extract_raw_text(file_path: str) -> str:
@@ -95,17 +90,11 @@ def extract_raw_text(file_path: str) -> str:
 
 
 def _extract_ocr_candidates(file_path: str) -> list[tuple[str, str]]:
-    """Return OCR attempts in risk order, keeping the original first."""
+    """Return a small, predictable set of OCR attempts."""
     if file_path.lower().endswith(".pdf"):
         return [
-            (_ocr_pdf_pages(file_path, dpi=200), "pdf-200dpi"),
-            (_ocr_pdf_pages(file_path, dpi=300), "pdf-300dpi"),
-            (_ocr_pdf_pages(file_path, dpi=300, config="--psm 6"), "pdf-300dpi-psm6"),
-            (_ocr_pdf_pages(file_path, dpi=300, config="--psm 11"), "pdf-300dpi-psm11"),
-            (
-                _ocr_pdf_pages(file_path, dpi=300, preprocess=True),
-                "pdf-300dpi-enhanced",
-            ),
+            (_ocr_pdf_pages(file_path), "pdf-original"),
+            (_ocr_pdf_pages(file_path, preprocess=True), "pdf-enhanced"),
         ]
 
     with Image.open(file_path) as image:
@@ -323,10 +312,8 @@ def ingest_bill_image(image_path: str, dry_run: bool = False) -> dict:
     valid_load_ids = get_valid_load_ids()
 
     parsed = None
-    bad_loads = []
     selected_source = candidates[0][1]
-    best_score = -1
-    for raw_text, source in candidates:
+    for index, (raw_text, source) in enumerate(candidates):
         candidate = parse_freight_bill(raw_text)
         carrier_match = match_carrier(raw_text, known_carriers)
         candidate["carrierCode"] = carrier_match["carrierCode"] if carrier_match else None
@@ -343,17 +330,8 @@ def ingest_bill_image(image_path: str, dry_run: bool = False) -> dict:
             parsed = candidate
             selected_source = source
             break
-        score = (
-            sum(candidate[key] is not None for key in
-                ("freightBillNumber", "invoiceDate", "freightAmount"))
-            + min(len(candidate["details"]), 20)
-            + (10 if candidate["validated"] else 0)
-            - len(candidate_bad_loads) * 5
-        )
-        if score > best_score:
+        if index == 0:
             parsed = candidate
-            best_score = score
-            bad_loads = candidate_bad_loads
             selected_source = source
 
     if parsed is None:
