@@ -3,5 +3,6 @@ psycopg2-binary
 python-dotenv
 pytesseract
 Pillow
+PyMuPDF
 pdf2image
 pypdf

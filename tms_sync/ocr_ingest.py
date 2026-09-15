@@ -65,17 +65,42 @@ def _preprocess_for_ocr(image):
     return gray.resize((gray.width * 2, gray.height * 2), Image.Resampling.LANCZOS)
 
 
+def _render_pdf_pages_to_images(pdf_path: str):
+    """Render PDF pages to PIL images.
+
+    Prefer PyMuPDF for cleaner PDF-to-image conversion, with a PDF2Image
+    fallback for environments where PyMuPDF is unavailable. This is a
+    direct replacement for the old Poppler/pdf2image rendering path.
+    """
+    try:
+        import pymupdf as fitz
+
+        doc = fitz.open(pdf_path)
+        pages = []
+        for page in doc:
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            pages.append(image)
+        return pages
+    except Exception:
+        try:
+            from pdf2image import convert_from_path
+
+            pages = convert_from_path(
+                pdf_path,
+                dpi=200,
+                poppler_path=r"E:\poppler\poppler-26.07.0\Library\bin",
+            )
+            return pages
+        except Exception:
+            raise
+
+
 def _ocr_pdf_pages(pdf_path: str, preprocess: bool = False) -> str:
     """Only reached when the PDF has no usable text layer, i.e. it's
     actually a scanned image saved as a PDF. Renders each page to an
     image and OCRs it with Tesseract the same way a plain image would be."""
-    from pdf2image import convert_from_path
-
-    pages = convert_from_path(
-        pdf_path,
-        dpi=200,
-        poppler_path=r"E:\poppler\poppler-26.07.0\Library\bin",
-    )
+    pages = _render_pdf_pages_to_images(pdf_path)
     if preprocess:
         pages = [_preprocess_for_ocr(page_image) for page_image in pages]
     return "\n".join(_ocr_image(page_image) for page_image in pages)
